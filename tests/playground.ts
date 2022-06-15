@@ -89,7 +89,8 @@ describe("playground", () => {
       .accounts({
         authority: alice.publicKey,
         base: firstTrade.publicKey,
-        authorVault: aliceOfferedVault,
+        authorOfferedVault: aliceOfferedVault,
+        authorRequestedVault: aliceRequestedVault,
         mintOffered: offeredMint,
         mintRequested: requestedMint,
       })
@@ -243,7 +244,8 @@ describe("playground", () => {
       .accounts({
         authority: alice.publicKey,
         base: secondTrade.publicKey,
-        authorVault: aliceOfferedVault,
+        authorOfferedVault: aliceOfferedVault,
+        authorRequestedVault: aliceRequestedVault,
         mintOffered: offeredMint,
         mintRequested: requestedMint,
       })
@@ -254,7 +256,7 @@ describe("playground", () => {
       .accounts({
         authority: alice.publicKey,
         base: secondTrade.publicKey,
-        authorVault: aliceOfferedVault,
+        authorOfferedVault: aliceOfferedVault,
       })
       .signers([alice])
       .rpc();

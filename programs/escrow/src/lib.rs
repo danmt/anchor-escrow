@@ -16,6 +16,8 @@ pub mod escrow {
         (*ctx.accounts.trade).amount_offered = amount_offered;
         (*ctx.accounts.trade).amount_requested = amount_requested;
         (*ctx.accounts.trade).author = ctx.accounts.authority.key();
+        (*ctx.accounts.trade).author_offered_vault = ctx.accounts.author_offered_vault.key();
+        (*ctx.accounts.trade).author_requested_vault = ctx.accounts.author_requested_vault.key();
         (*ctx.accounts.trade).mint_offered = ctx.accounts.mint_offered.key();
         (*ctx.accounts.trade).mint_requested = ctx.accounts.mint_requested.key();
         (*ctx.accounts.trade).bump = *ctx.bumps.get("trade").unwrap();
@@ -25,7 +27,7 @@ pub mod escrow {
             CpiContext::new(
                 ctx.accounts.token_program.to_account_info(),
                 Transfer {
-                    from: ctx.accounts.author_vault.to_account_info(),
+                    from: ctx.accounts.author_offered_vault.to_account_info(),
                     to: ctx.accounts.trade_vault.to_account_info(),
                     authority: ctx.accounts.authority.to_account_info(),
                 },
@@ -48,7 +50,7 @@ pub mod escrow {
                 ctx.accounts.token_program.to_account_info(),
                 Transfer {
                     from: ctx.accounts.trade_vault.to_account_info(),
-                    to: ctx.accounts.author_vault.to_account_info(),
+                    to: ctx.accounts.author_offered_vault.to_account_info(),
                     authority: ctx.accounts.trade.to_account_info(),
                 },
                 &[&trade_seeds[..]],
@@ -139,6 +141,23 @@ pub struct StartTrade<'info> {
     pub authority: Signer<'info>,
     /// CHECK: Base is an arbitrary Pubkey used to generate the trade
     pub base: UncheckedAccount<'info>,
+    pub mint_offered: Box<Account<'info, Mint>>,
+    #[account(
+        constraint = mint_offered.key() != mint_requested.key()
+    )]
+    pub mint_requested: Box<Account<'info, Mint>>,
+    #[account(
+        mut,
+        constraint = author_offered_vault.mint == mint_offered.key(),
+        constraint = author_offered_vault.owner == authority.key(),
+    )]
+    pub author_offered_vault: Box<Account<'info, TokenAccount>>,
+    #[account(
+        mut,
+        constraint = author_requested_vault.mint == mint_requested.key(),
+        constraint = author_offered_vault.owner == authority.key(),
+    )]
+    pub author_requested_vault: Box<Account<'info, TokenAccount>>,
     #[account(
         init,
         payer = authority,
@@ -149,14 +168,7 @@ pub struct StartTrade<'info> {
         ],
         bump,
     )]
-    pub trade: Account<'info, Trade>,
-    pub mint_offered: Account<'info, Mint>,
-    pub mint_requested: Account<'info, Mint>,
-    #[account(
-        mut,
-        constraint = author_vault.mint == mint_offered.key()
-    )]
-    pub author_vault: Account<'info, TokenAccount>,
+    pub trade: Box<Account<'info, Trade>>,
     #[account(
         init,
         payer = authority,
@@ -168,7 +180,7 @@ pub struct StartTrade<'info> {
         token::mint = mint_offered,
         token::authority = trade,
     )]
-    pub trade_vault: Account<'info, TokenAccount>,
+    pub trade_vault: Box<Account<'info, TokenAccount>>,
 }
 
 #[derive(Accounts)]
@@ -182,13 +194,14 @@ pub struct CancelTrade<'info> {
         mut,
         close = authority,
         constraint = trade.author == authority.key(),
+        constraint = !trade.executed,
         seeds = [
             b"trade".as_ref(),
             base.key().as_ref(),
         ],
         bump = trade.bump,
     )]
-    pub trade: Account<'info, Trade>,
+    pub trade: Box<Account<'info, Trade>>,
     #[account(
         mut,
         seeds = [
@@ -197,12 +210,14 @@ pub struct CancelTrade<'info> {
         ],
         bump,
     )]
-    pub trade_vault: Account<'info, TokenAccount>,
+    pub trade_vault: Box<Account<'info, TokenAccount>>,
     #[account(
         mut,
-        constraint = author_vault.mint == trade.mint_offered
+        constraint = author_offered_vault.mint == trade.mint_offered,
+        constraint = author_offered_vault.key() == trade.author_offered_vault,
+        constraint = author_offered_vault.owner == authority.key(),
     )]
-    pub author_vault: Account<'info, TokenAccount>,
+    pub author_offered_vault: Box<Account<'info, TokenAccount>>,
 }
 
 #[derive(Accounts)]
@@ -221,7 +236,7 @@ pub struct ExecuteTrade<'info> {
         ],
         bump = trade.bump,
     )]
-    pub trade: Account<'info, Trade>,
+    pub trade: Box<Account<'info, Trade>>,
     #[account(
         mut,
         seeds = [
@@ -230,22 +245,26 @@ pub struct ExecuteTrade<'info> {
         ],
         bump,
     )]
-    pub trade_vault: Account<'info, TokenAccount>,
+    pub trade_vault: Box<Account<'info, TokenAccount>>,
     #[account(
         mut,
-        constraint = author_requested_vault.mint == trade.mint_requested
+        constraint = author_requested_vault.mint == trade.mint_requested,
+        constraint = author_requested_vault.key() == trade.author_requested_vault,
+        constraint = author_requested_vault.owner == trade.author,
     )]
-    pub author_requested_vault: Account<'info, TokenAccount>,
+    pub author_requested_vault: Box<Account<'info, TokenAccount>>,
     #[account(
         mut,
-        constraint = executer_offered_vault.mint == trade.mint_offered
+        constraint = executer_offered_vault.mint == trade.mint_offered,
+        constraint = executer_offered_vault.owner == authority.key(),
     )]
-    pub executer_offered_vault: Account<'info, TokenAccount>,
+    pub executer_offered_vault: Box<Account<'info, TokenAccount>>,
     #[account(
         mut,
-        constraint = executer_requested_vault.mint == trade.mint_requested
+        constraint = executer_requested_vault.mint == trade.mint_requested,
+        constraint = executer_requested_vault.owner == authority.key(),
     )]
-    pub executer_requested_vault: Account<'info, TokenAccount>,
+    pub executer_requested_vault: Box<Account<'info, TokenAccount>>,
 }
 
 #[derive(Accounts)]
@@ -259,13 +278,14 @@ pub struct DeleteTrade<'info> {
         mut, 
         close = authority, 
         constraint = trade.author == authority.key(),
+        constraint = trade.executed,
         seeds = [
             b"trade".as_ref(),
             base.key().as_ref(),
         ],
         bump = trade.bump,
     )]
-    pub trade: Account<'info, Trade>,
+    pub trade: Box<Account<'info, Trade>>,
     #[account(
         mut,
         seeds = [
@@ -274,12 +294,14 @@ pub struct DeleteTrade<'info> {
         ],
         bump,
     )]
-    pub trade_vault: Account<'info, TokenAccount>,
+    pub trade_vault: Box<Account<'info, TokenAccount>>,
 }
 
 #[account]
 pub struct Trade {
     author: Pubkey,
+    author_offered_vault: Pubkey,
+    author_requested_vault: Pubkey,
     executed: bool,
     amount_requested: u64,
     mint_requested: Pubkey,
